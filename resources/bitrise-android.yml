@@ -1,0 +1,83 @@
+---
+format_version: 1.2.0
+default_step_lib_source: https://github.com/bitrise-io/bitrise-steplib.git
+trigger_map:
+- pattern: "*"
+  is_pull_request_allowed: true
+  workflow: primary
+workflows:
+  primary:
+    steps:
+    - activate-ssh-key@3.1.0:
+        run_if: '{{getenv "SSH_RSA_PRIVATE_KEY" | ne ""}}'
+    - git-clone@3.2.0: {}
+    - script@1.1.1:
+        title: npm install
+        inputs:
+        - content: |-
+            #!/bin/bash
+            # fail if any commands fails
+            set -e
+            # debug log
+            set -x
+
+            # write your script here
+            curl -sL https://deb.nodesource.com/setup_6.x | sudo -E bash -
+            apt-get install -y nodejs
+            npm install
+
+            # or run a script from your repository, like:
+            # bash ./path/to/script.sh
+            # not just bash, e.g.:
+            # ruby ./path/to/script.rb
+    - gradle-runner@1.3.1:
+        inputs:
+        - gradle_task: "$GRADLE_TASK"
+    - sign-apk@0.9.8: {}
+    - script@1.1.1:
+        title: Upload to DeployGate
+        inputs:
+        - content: |-
+            #!/bin/bash
+            # fail if any commands fails
+            set -e
+            # debug log
+            set -x
+
+            # write your script here
+            curl \
+                -F "file=@$BITRISE_SIGNED_APK_PATH" \
+                -F "token=$DEPLOYGATE_API_KEY" \
+                -F "message=$BITRISE_APP_TITLE $BITRISE_BUILD_NUMBER" \
+                -F "distribution_key=$DEPLOYGATE_DISTRIBUTION_KEY" \
+                -F "release_note=$GIT_CLONE_COMMIT_MESSAGE_SUBJECT" \
+                https://deploygate.com/api/users/$DEPLOYGATE_USERNAME/apps
+
+
+            # or run a script from your repository, like:
+            # bash ./path/to/script.sh
+            # not just bash, e.g.:
+            # ruby ./path/to/script.rb
+    - slack@2.1.0:
+        inputs:
+        - webhook_url: https://hooks.slack.com/services/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
+        - channel: "#dev"
+        - message: |-
+            $BITRISE_APP_TITLE $BITRISE_BUILD_NUMBER is available!!
+            https://deploygate.com/users/januswel/apps/com.januswel.pomodoro
+        - message_on_error: |-
+            building $BITRISE_APP_TITLE $BITRISE_BUILD_NUMBER is failed...
+            $BITRISE_BUILD_URL
+        - emoji: ":bitrise-success:"
+        - emoji_on_error: ":bitrise-failure:"
+app:
+  envs:
+  - opts:
+      is_expand: false
+    GRADLE_BUILD_FILE_PATH: android/build.gradle
+  - opts:
+      is_expand: false
+    GRADLE_TASK: assembleRelease
+  - opts:
+      is_expand: false
+    GRADLEW_PATH: android/gradlew
